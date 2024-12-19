@@ -1,0 +1,593 @@
+
+##ST project
+## Authors: Mandana Ashrafzadeh and Katlyn Villers
+# Install necessary packages
+install.packages("ggplot2")
+install.packages("sf")
+install.packages("sp")
+install.packages("spdep")
+install.packages("gstat")
+install.packages("readxl")
+install.packages("viridis")
+install.packages("gganimate")
+install.packages("maps")
+
+
+# Load libraries
+library(ggplot2)       
+library(sf)            
+library(sp)            
+library(spdep)         
+library(gstat)         
+library(readxl)        
+library(viridis)      
+library(gganimate)
+library(maps)
+library(dplyr)
+
+# Load the dataset
+file_path <- "C:\\Users\\ManDana\\OneDrive\\Desktop\\Japan.xlsx"  # Replace with your file path
+data <- read_excel(file_path)
+
+# Preview the data
+head(data)
+
+# Check structure and summary
+str(data)
+summary(data)
+# Check for missing values
+colSums(is.na(data))
+###########################3
+####
+library(ggplot2)
+
+#3.2
+# Scatter plot of spatial distribution
+library(maps)
+
+# Load Japan map
+japan_map <- map_data("world", region = "Japan")
+
+# Plot spatial distribution
+g=ggplot() +
+  geom_polygon(data = japan_map, aes(x = long, y = lat, group = group), fill = "gray90", color = "black") +
+  geom_point(data = data, aes(x = longitude, y = latitude, size = mag, color = depth), alpha = 0.7) +
+  scale_color_viridis_c() +
+  labs(title = "Spatial Distribution of Earthquake Magnitudes", x = "Longitude", y = "Latitude", size = "Magnitude", color = "Depth") +
+  theme_minimal()
+
+g
+
+# Step 1: Aggregate Mean Magnitudes by Latitude and Longitude
+lat_means_data <- data %>%
+  group_by(latitude) %>%
+  summarise(mean_mag = mean(mag))  # Calculate mean magnitude for each latitude
+
+lon_means_data <- data %>%
+  group_by(longitude) %>%
+  summarise(mean_mag = mean(mag))  # Calculate mean magnitude for each longitude
+
+# Step 2: Plot Mean Magnitudes vs Latitude
+lat_means_plot <- ggplot(lat_means_data) +
+  geom_point(aes(x = latitude, y = mean_mag), color = "blue", size = 2) +
+  xlab("Latitude (deg)") +
+  ylab("Mean Earthquake Magnitude") +
+  ggtitle("Mean Earthquake Magnitudes vs. Latitude") +
+  theme_bw()
+
+# Step 3: Plot Mean Magnitudes vs Longitude
+lon_means_plot <- ggplot(lon_means_data) +
+  geom_point(aes(x = longitude, y = mean_mag), color = "red", size = 2) +
+  xlab("Longitude (deg)") +
+  ylab("Mean Earthquake Magnitude") +
+  ggtitle("Mean Earthquake Magnitudes vs. Longitude") +
+  theme_bw()
+
+# Step 4: Print the Plots
+print(lat_means_plot)
+print(lon_means_plot)
+
+
+#####################################################################################
+#Krigings
+install.packages("fields")
+library(fields)
+# Load necessary libraries
+library("dplyr")
+library("fields")
+library("ggplot2")
+library("gstat")
+library("RColorBrewer")
+library("sp")
+library("spacetime")
+library("STRbook")
+library("readxl")
+library("dplyr")
+library("fields")
+library("ggplot2")
+library("gstat")
+library("RColorBrewer")
+library("sp")
+file_path <- "C:\\Users\\ManDana\\OneDrive\\Desktop\\Japan.xlsx"  # Replace with your file path
+data <- read_excel(file_path)
+
+# Ensure 'date' column exists and is in Date format
+if (!"date" %in% colnames(data)) {
+  data <- data %>%
+    mutate(date = as.Date(paste(2018, month, Day, sep = "-"), format = "%Y-%m-%d"))
+}
+
+# Add a month column for grouping
+data <- data %>%
+  mutate(
+    longitude = as.numeric(longitude),
+    latitude = as.numeric(latitude),
+    month_label = factor(month, levels = 1:12, labels = month.abb)  # Ensure month order
+  )
+
+# Define the prediction grid using the entire dataset's spatial range
+pred_grid <- expand.grid(
+  longitude = seq(min(data$longitude, na.rm = TRUE), max(data$longitude, na.rm = TRUE), length = 20),
+  latitude = seq(min(data$latitude, na.rm = TRUE), max(data$latitude, na.rm = TRUE), length = 20),
+  month = unique(data$month)  # Include each month's numeric value
+)
+
+# Perform IDW interpolation
+idw_results <- list()
+for (m in unique(data$month)) {
+# Filter data for the current month
+  month_data <- data %>% filter(month == m & !is.na(mag))
+  
+# Prediction grid for the current month
+  month_pred_grid <- pred_grid %>% filter(month == m)
+  
+# Perform IDW interpolation for the current month
+  idw_result <- idw(
+    formula = mag ~ 1,
+    locations = ~ longitude + latitude,
+    data = month_data,
+    newdata = month_pred_grid,
+    idp = 5  # IDW power
+  )
+  
+# Add month label to the IDW results
+  idw_data <- as.data.frame(idw_result)
+  idw_data$month_label <- month.abb[m]
+  idw_results[[m]] <- idw_data
+}
+
+# Combine all IDW results into a single dataframe
+idw_combined <- do.call(rbind, idw_results)
+idw_combined$month_label <- factor(idw_combined$month_label, levels = month.abb)
+
+# Visualize the prediction results
+ggplot(idw_combined) +
+  geom_tile(aes(x = longitude, y = latitude, fill = var1.pred)) +
+  scale_fill_gradientn(
+    colors = c("blue", "cyan", "yellow", "orange", "red"),  # Similar to the provided color scale
+    name = "Predicted Magnitude"
+  ) +
+  xlab("Longitude") +  # Label the x-axis
+  ylab("Latitude") +   # Label the y-axis
+  facet_wrap(~ month_label, ncol = 4) +  # Facet by month in 4 columns
+  coord_fixed() +  # Fix aspect ratio
+  theme_bw()  # Minimal theme
+# Summary statistics for predictions
+summary(idw_combined$var1.pred)
+install.packages("fields")
+library(fields)
+
+
+obs_obs_dist_mat <- rdist(
+  select(data, longitude, latitude, month),
+  select(data, longitude, latitude, month)
+)
+
+obs_obs_dist_mat
+
+pred_obs_dist_mat <- rdist(
+  select(pred_grid,longitude, latitude, month),
+  select(data, longitude, latitude, month)
+)
+pred_obs_dist_mat
+# Define IDW weight function
+Wt_IDW <- function(theta, dist_mat) {
+  1 / dist_mat^theta
+}
+
+# Define Gaussian weight function
+Wt_Gauss <- function(theta, dist_mat) {
+  exp(-dist_mat^2 / theta)
+}
+
+# Compute Gaussian weights and predictions
+Wtilde <- Wt_Gauss(theta = 0.5, dist_mat = pred_obs_dist_mat)
+Wtilde_rsums <- rowSums(Wtilde)
+W <- Wtilde / Wtilde_rsums
+z_pred_Gauss <- as.numeric(W %*% data$mag)
+z_pred_Gauss
+summary(z_pred_Gauss)
+
+#Gaussian
+library(gstat)
+library(dplyr)
+library(sp)
+
+# Create Gaussian interpolation model for each month
+gaussian_results <- list()
+
+for (m in unique(data$month)) {
+  # Filter data for the current month using base R
+  month_data <- data[data$month == m & !is.na(data$mag), ]
+  
+  # Create a SpatialPointsDataFrame for the current month data
+  coordinates(month_data) <- ~ longitude + latitude
+  
+  # Subset prediction grid for the current month using base R
+  month_pred_grid <- pred_grid[pred_grid$month == m, ]
+  
+  # Create a SpatialPointsDataFrame for the prediction grid
+  coordinates(month_pred_grid) <- ~ longitude + latitude
+  
+  # Perform Gaussian interpolation for the current month
+  gaussian_model <- gstat(
+    formula = mag ~ 1,
+    locations = month_data,
+    set = list(idp = 0.5)  # Use optimal Gaussian parameter
+  )
+  
+  # Predict magnitudes on the grid
+  gaussian_prediction <- predict(gaussian_model, newdata = month_pred_grid)
+  
+  # Convert the prediction results to a data frame and store them
+  gaussian_results[[m]] <- as.data.frame(gaussian_prediction)
+}
+
+# Combine all Gaussian results into a single data frame
+gaussian_combined <- do.call(rbind, gaussian_results)
+
+# Add month labels for better visualization
+gaussian_combined$month <- rep(unique(data$month), each = nrow(pred_grid) / length(unique(data$month)))
+gaussian_combined$month_label <- factor(gaussian_combined$month, levels = 1:12, labels = month.abb)
+
+gaussian_combined$month_label
+
+#GAussian VIsualization
+library(ggplot2)
+library(dplyr)
+library(sp)
+
+# Assuming gaussian_combined contains the Gaussian interpolation results
+
+# Example structure of gaussian_combined
+# gaussian_combined should have the columns: longitude, latitude, var1.pred (predicted values), and month_label
+
+# Visualization of Gaussian-predicted magnitudes
+ggplot(gaussian_combined) +
+  geom_tile(aes(x = longitude, y = latitude, fill = var1.pred)) +
+  scale_fill_gradientn(
+    colors = c("blue", "cyan", "yellow", "orange", "red"),
+    name = "Predicted Magnitude"
+  ) +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  facet_wrap(~ month_label, ncol = 4) +  # Facet by month
+  coord_fixed() +  # Fix aspect ratio
+  theme_bw()  # Minimal theme
+
+# Define LOOCV scoring function
+LOOCV_score <- function(Wt_fun, theta, dist_mat, Z) {
+  Wtilde <- Wt_fun(theta, dist_mat)
+  CV <- numeric(length(Z))
+  for (i in 1:length(Z)) {
+    Wtilde2 <- Wtilde[i, -i]
+    W2 <- Wtilde2 / sum(Wtilde2)
+    z_pred <- W2 %*% Z[-i]
+    CV[i] <- (z_pred - Z[i])^2
+  }
+  mean(CV)
+}
+
+# LOOCV for IDW and Gaussian weights
+LOOCV_IDW <- LOOCV_score(Wt_IDW, theta = 5, dist_mat = obs_obs_dist_mat, Z = data$mag)
+LOOCV_Gauss <- LOOCV_score(Wt_Gauss, theta = 0.5, dist_mat = obs_obs_dist_mat, Z = data$mag)
+
+# Optimize parameters using LOOCV
+theta_IDW <- seq(4, 6, length = 21)
+theta_Gauss <- seq(0.1, 2.1, length = 21)
+CV_IDW <- sapply(theta_IDW, function(theta) LOOCV_score(Wt_IDW, theta, obs_obs_dist_mat, data$mag))
+CV_Gauss <- sapply(theta_Gauss, function(theta) LOOCV_score(Wt_Gauss, theta, obs_obs_dist_mat, data$mag))
+
+# Cross-validation plots
+par(mfrow = c(1, 2))
+plot(theta_IDW, CV_IDW, type = "o", xlab = expression(alpha), ylab = "CV (IDW)")
+plot(theta_Gauss, CV_Gauss, type = "o", xlab = expression(theta), ylab = "CV (Gaussian)")
+
+# Optimal parameters
+optimal_theta_IDW <- theta_IDW[which.min(CV_IDW)]
+optimal_theta_Gauss <- theta_Gauss[which.min(CV_Gauss)]
+
+# Display optimal parameters
+optimal_theta_IDW
+optimal_theta_Gauss
+
+# Retrieve minimum CV errors
+min_CV_IDW <- min(CV_IDW)
+min_CV_Gauss <- min(CV_Gauss)
+
+# Compare errors
+cat("Minimum CV Error (IDW): ", min_CV_IDW, " at alpha = ", optimal_theta_IDW, "\n")
+cat("Minimum CV Error (Gaussian): ", min_CV_Gauss, " at theta = ", optimal_theta_Gauss, "\n")
+
+# Determine the better method
+if (min_CV_IDW < min_CV_Gauss) {
+  cat("IDW is the better method based on lower CV error.\n")
+} else {
+  cat("Gaussian interpolation is the better method based on lower CV error.\n")
+}
+
+summary(idw_combined$var1.pred)
+
+summary(gaussian_combined$var1.pred)
+ 
+#summary(idw_combined$var1.pred)
+#Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#4.500   4.639   4.724   4.778   4.824   5.900 
+#summary(gaussian_combined$var1.pred)
+#Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#4.650   4.734   4.765   4.794   4.796   5.800 
+
+##########################################################
+# Gaussian Prediction Visualization
+library(ggplot2)
+library(dplyr)
+library(sp)
+
+# Combine Gaussian results into a single data frame (if not done already)
+gaussian_combined <- do.call(rbind, gaussian_results)
+
+# Add month labels for better visualization (if not added already)
+gaussian_combined$month <- rep(unique(data$month), each = nrow(pred_grid) / length(unique(data$month)))
+gaussian_combined$month_label <- factor(gaussian_combined$month, levels = 1:12, labels = month.abb)
+
+# Gaussian Prediction Plot
+ggplot(gaussian_combined) +
+  geom_tile(aes(x = longitude, y = latitude, fill = var1.pred)) +
+  scale_fill_gradientn(
+    colors = c("blue", "cyan", "yellow", "orange", "red"),  # Adjust color scale as needed
+    name = "Predicted Magnitude"
+  ) +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  facet_wrap(~ month_label, ncol = 4) +  # Facet by month
+  coord_fixed() +  # Fix aspect ratio for proper spatial visualization
+  theme_bw() +
+  ggtitle("Gaussian Interpolation Predictions for Earthquake Magnitudes")
+
+########################################################################
+#motion pictures
+library(gganimate)
+library(ggplot2)
+library(maps)
+
+# Load Japan map
+japan_map <- map_data("world", region = "Japan")
+data$time <- as.Date(paste(2018, data$month, data$Day, sep = "-"), format = "%Y-%m-%d")
+data$time
+# Create the animation
+motion_plot <- ggplot() +
+  geom_polygon(data = japan_map, aes(x = long, y = lat, group = group), fill = "gray90", color = "black") +
+  geom_point(data = data, aes(x = longitude, y = latitude, size = mag, color = depth), alpha = 0.7) +
+  scale_color_viridis_c() +
+  labs(title = "Earthquake Magnitudes Over Time in Japan", x = "Longitude", y = "Latitude", size = "Magnitude", color = "Depth") +
+  theme_minimal() +
+  transition_time(time) +
+  labs(subtitle = 'Date: {frame_time}')
+
+# Render the animation
+animate(motion_plot, nframes = 100, fps = 10)
+anim_save("earthquake_motion_graph.gif", animation = last_animation())
+###################################################
+
+####################################################################
+###Simulated longitudinal data showing the response of individuals through time.
+##The red lines are the simulated responses for a control group,
+library(ggplot2)
+library(dplyr)
+library(readxl)
+
+# Step 1: Load the dataset
+file_path <- "C:\\Users\\ManDana\\Desktop\\Japan.xlsx"  # Replace with your file path
+data <- read_excel(file_path)
+
+# Step 2: Add a 'date' column if it doesn't already exist
+if (!"date" %in% colnames(data)) {
+  data <- data %>%
+    mutate(date = as.Date(paste(2018, month, Day, sep = "-"), format = "%Y-%m-%d"))
+}
+
+# Step 3: Categorize depth into shallow, intermediate, and deep
+data <- data %>% 
+  mutate(
+    depth_category = case_when(
+      depth <= 50 ~ "Shallow",
+      depth <= 300 ~ "Intermediate",
+      TRUE ~ "Deep"
+    )
+  )
+
+# Step 4: Create the longitudinal plot
+# Use only depth_category for grouping
+longitudinal_plot <- ggplot(data, aes(x = date, y = mag, group = depth_category, color = depth_category)) +
+  geom_line(alpha = 0.4) +  # Lines for each depth category across time
+  scale_color_manual(values = c("Shallow" = "red", "Intermediate" = "green", "Deep" = "blue")) +
+  labs(
+    title = "Longitudinal Visualization of Earthquake Magnitudes",
+    x = "Time",
+    y = "Magnitude",
+    color = "Depth Category"
+  ) +
+  theme_minimal()
+
+# Step 5: Print the plot
+print(longitudinal_plot)
+
+
+##########################################################
+#Spatial density map
+# Load necessary libraries
+library(ggplot2)
+library(ggmap)
+
+# Spatial density map
+density_map <- ggplot(data, aes(x = longitude, y = latitude)) +
+  geom_density2d(color = "blue") +
+  stat_density2d(aes(fill = ..level..), geom = "polygon", alpha = 0.3) +
+  scale_fill_viridis_c(name = "Density Level") +
+  labs(
+    title = "Spatial Density Map of Earthquakes",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+
+# Print the density map
+print(density_map)
+############################################################
+#################################################################################
+
+#####################################################################
+# Step 1: Load the dataset
+file_path <- "C:\\Users\\ManDana\\Desktop\\Japan.xlsx"  # Replace with the correct file path
+data <- read_excel(file_path)
+# Directional trend analysis
+directional_plot <- ggplot(data, aes(x = latitude, y = mag)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(
+    title = "Directional Trend Analysis of Earthquake Magnitudes",
+    x = "Latitude",
+    y = "Magnitude"
+  ) +
+  theme_minimal()
+
+# Print the directional trend plot
+print(directional_plot)
+################################################################################
+########################################################################3
+
+# better resolution 
+if (!"date" %in% colnames(data)) {
+  data <- data %>%
+    mutate(date = as.Date(paste(2018, month, Day, sep = "-"), format = "%Y-%m-%d"))
+}
+
+# Add a month column for grouping
+data <- data %>%
+  mutate(
+    longitude = as.numeric(longitude),
+    latitude = as.numeric(latitude),
+    month_label = factor(month, levels = 1:12, labels = month.abb)  # Ensure month order
+  )
+
+# Define the prediction grid using the entire dataset's spatial range
+pred_grid <- expand.grid(
+  longitude = seq(min(data$longitude, na.rm = TRUE), max(data$longitude, na.rm = TRUE), length = 50),
+  latitude = seq(min(data$latitude, na.rm = TRUE), max(data$latitude, na.rm = TRUE), length = 50),
+  month = unique(data$month)  # Include each month's numeric value
+)
+
+# Perform IDW interpolation
+idw_results <- list()
+for (m in unique(data$month)) {
+  # Filter data for the current month
+  month_data <- data %>% filter(month == m & !is.na(mag))
+  
+  # Prediction grid for the current month
+  month_pred_grid <- pred_grid %>% filter(month == m)
+  
+  # Perform IDW interpolation for the current month
+  idw_result <- idw(
+    formula = mag ~ 1,
+    locations = ~ longitude + latitude,
+    data = month_data,
+    newdata = month_pred_grid,
+    idp = 5  # IDW power
+  )
+  
+  # Add month label to the IDW results
+  idw_data <- as.data.frame(idw_result)
+  idw_data$month_label <- month.abb[m]
+  idw_results[[m]] <- idw_data
+}
+
+# Combine all IDW results into a single dataframe
+idw_combined <- do.call(rbind, idw_results)
+idw_combined$month_label <- factor(idw_combined$month_label, levels = month.abb)
+
+# Save the plot as a high-resolution image
+ggplot(idw_combined) +
+  geom_tile(aes(x = longitude, y = latitude, fill = var1.pred)) +
+  scale_fill_gradientn(
+    colors = c("blue", "cyan", "yellow", "orange", "red"),  # Similar to the provided color scale
+    name = "Predicted Magnitude"
+  ) +
+  xlab("Longitude") +  # Label the x-axis
+  ylab("Latitude") +   # Label the y-axis
+  facet_wrap(~ month_label, ncol = 4) +  # Facet by month in 4 columns
+  coord_fixed() +  # Fix aspect ratio
+  theme_bw()  # Minimal theme
+
+# Save as a high-resolution PNG file
+ggsave(
+  "spatio_temporal_plot.png", 
+  dpi = 300,            # High resolution
+  width = 12,           # Adjust width
+  height = 8            # Adjust height
+)
+
+# Save as a PDF for vector graphics
+ggsave(
+  "spatio_temporal_plot.pdf", 
+  device = "pdf", 
+  width = 12, 
+  height = 8
+)
+
+###################################################################################3
+
+
+# Add a Method column to each dataset
+idw_combined$Method <- "IDW"
+gaussian_combined$Method <- "Gaussian"
+
+# Ensure column names are consistent for combining
+missing_in_idw <- setdiff(colnames(gaussian_combined), colnames(idw_combined))
+missing_in_gaussian <- setdiff(colnames(idw_combined), colnames(gaussian_combined))
+
+if (length(missing_in_idw) > 0) {
+  idw_combined[missing_in_idw] <- NA
+}
+if (length(missing_in_gaussian) > 0) {
+  gaussian_combined[missing_in_gaussian] <- NA
+}
+
+# Combine both datasets
+colnames(idw_combined) <- colnames(gaussian_combined)
+combined_results <- rbind(idw_combined, gaussian_combined)
+
+# Create a box plot with separate facets for IDW and Gaussian
+separate_boxplot <- ggplot(combined_results, aes(x = month_label, y = var1.pred, fill = month_label)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_viridis_d(name = "Month") +
+  labs(
+    title = "Monthly Predicted Earthquake Magnitudes by Method",
+    x = "Month",
+    y = "Predicted Magnitude"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate month labels
+  facet_grid(rows = vars(Method))  # Create separate rows for IDW and Gaussian
+
+# Print the box plot
+print(separate_boxplot)
